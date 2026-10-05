@@ -1,3 +1,26 @@
+# HyperSpaces maintained Durable Streams fork
+
+Source provenance and the exact official release archive are recorded in
+[UPSTREAM.md](UPSTREAM.md). Native read-only h2c is enabled with `--h2-port 4438`;
+HTTP/1.1 remains on `--port 4437`. Both listeners use the same handlers and Store.
+The default container enables both listeners and keeps WAL durability.
+
+The h2 listener advertises 1,024 logical streams per connection and admits
+at most 256 connections. It uses bounded flow control and positioned file
+reads. A stalled response resets after 30 seconds; cancellation resets only
+that response. It is a private service listener, with the gateway enforcing
+reader authorization independently for every response.
+
+Run `cargo test --locked` for the existing protocol/storage/recovery suite and
+native h2 transport test. CI publishes an amd64 GHCR image tagged by source
+commit after tests pass, and its `image-pin` artifact records the deployment
+digest. HyperSpaces uses that immutable digest. The transport patch does not
+change stored data, offsets, write admission or WAL recovery.
+
+The original upstream README follows.
+
+---
+
 # Durable Streams server (Rust)
 
 [Durable Streams](../../PROTOCOL.md) is an open protocol for persistent, resumable event streams over plain HTTP — the data primitive for the agent loop.

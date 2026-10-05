@@ -1,3 +1,14 @@
+# HyperSpaces fork
+
+- Add the opt-in private `--h2-port` read listener (GET/HEAD/OPTIONS), with 1,024
+  HTTP streams per connection and 256 admitted h2 connections.
+- Reuse the HTTP/1 protocol handlers and existing Store; h1 writes and the
+  persistence/WAL formats are unchanged.
+- Frame responses with bounded 16 KiB file reads and h2 flow control. Reject
+  payload-bearing read requests, strip h1-only headers, and reset failed bodies.
+- Reader cancellation drops that one source without closing shared connections.
+- Publish commit-tagged images in CI; downstream deployments pin the digest.
+
 # @electric-ax/durable-streams-server-rust
 
 ## 0.1.5

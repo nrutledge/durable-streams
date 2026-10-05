@@ -1,6 +1,7 @@
 mod api;
 mod blobstore;
 mod engine_raw;
+mod engine_h2;
 mod handlers;
 mod http1;
 mod srvstats;
@@ -113,6 +114,7 @@ fn raise_nofile_limit() {
 fn main() {
     #[cfg(unix)]
     raise_nofile_limit();
+    let mut h2_port: Option<u16> = None;
     let mut port: u16 = 4437; // protocol default (PROTOCOL.md §13.1)
     let mut host: std::net::IpAddr = [127, 0, 0, 1].into();
     let mut data_dir = std::env::temp_dir().join("durable-streams-rust");
@@ -144,6 +146,7 @@ fn main() {
         match a.as_str() {
             "--host" => host = parse_val(args.next(), "--host"),
             "--port" => port = parse_val(args.next(), "--port"),
+            "--h2-port" => h2_port = Some(parse_val(args.next(), "--h2-port")),
             "--data-dir" => data_dir = val(args.next(), "--data-dir").into(),
             "--long-poll-timeout-ms" => {
                 handlers::set_long_poll_timeout(parse_val(args.next(), "--long-poll-timeout-ms"));
@@ -442,8 +445,19 @@ fn main() {
             "durable-streams-server listening on http://{addr} (data: {})",
             data_dir.display()
         );
+        let h2_listener = match h2_port {
+            Some(port) => Some(TcpListener::bind(SocketAddr::from((host, port))).await.expect("h2 bind failed")),
+            None => None,
+        };
+        let h2 = async {
+            if let Some(listener) = h2_listener {
+                println!("durable-streams-server h2c reads on {}", listener.local_addr().unwrap());
+                engine_h2::serve(store.clone(), listener).await;
+            } else { std::future::pending::<()>().await; }
+        };
         tokio::select! {
-            _ = engine_raw::serve(store, listener) => {}
+            _ = engine_raw::serve(store.clone(), listener) => {}
+            _ = h2 => {}
             _ = shutdown_signal() => {
                 // Stop accepting (the serve future is dropped here), let in-flight
                 // requests — including their group-commit fsync — finish, then flush

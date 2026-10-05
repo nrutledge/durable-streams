@@ -1,28 +1,12 @@
 # syntax=docker/dockerfile:1
-#
-# Built multi-arch (linux/amd64 + linux/arm64) natively per arch by
-# .github/workflows/docker_multiarch_image.yml — the build context is the repo
-# root and this Dockerfile is `packages/durable-streams-rust/Dockerfile`.
-
-# ---- build stage: compile the release binary (glibc, matches the runtime) ----
-FROM rust:1-bookworm AS build
-WORKDIR /app
-# Copy only what the build needs (no target/, no npm/) so we don't depend on a
-# .dockerignore at the shared repo root.
-COPY packages/durable-streams-rust/Cargo.toml packages/durable-streams-rust/Cargo.lock ./
-COPY packages/durable-streams-rust/src ./src
-# Default features only (no `tier`/`telemetry`) — minimal image, matching the
-# conformance matrix. To ship S3 tiering, add `--features tier` here AND
-# `ca-certificates` to the runtime stage.
+FROM rust:1-bookworm@sha256:59037199c44290f2befcdd58dcc540164763fc296950255aaefeef096a1866b0 AS builder
+WORKDIR /source
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
 RUN cargo build --release --locked
-
-# ---- runtime stage: distroless (glibc cc), no shell / package manager ----
-FROM gcr.io/distroless/cc-debian12 AS runtime
-COPY --from=build /app/target/release/durable-streams-server /usr/local/bin/durable-streams-server
-# Protocol default port (PROTOCOL.md §13.1); override with `--port`.
-EXPOSE 4437
-ENTRYPOINT ["/usr/local/bin/durable-streams-server"]
-# Bind all interfaces by default (the binary defaults to 127.0.0.1, unreachable
-# from outside the container). Override by passing your own args. For persistence,
-# mount a volume and add `--data-dir /your/path` (default is an ephemeral tmp dir).
-CMD ["--host", "0.0.0.0"]
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /source/target/release/durable-streams-server /usr/local/bin/durable-streams-server
+VOLUME ["/data"]
+EXPOSE 4437 4438
+CMD ["durable-streams-server", "--host", "0.0.0.0", "--port", "4437", "--h2-port", "4438", "--data-dir", "/data/durable-streams", "--durability", "wal"]
