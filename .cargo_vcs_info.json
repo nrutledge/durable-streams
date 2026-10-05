@@ -1,0 +1,7 @@
+{
+  "git": {
+    "sha1": "88793e76595d69be300731b9b25c58538923a53b",
+    "dirty": true
+  },
+  "path_in_vcs": "packages/durable-streams-rust"
+}
