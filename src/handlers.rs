@@ -1,3 +1,4 @@
+// Modified by HyperSpaces (2026): Preserve SSE file errors and verify damaged-history behavior. Original: durable-streams 0.1.5, Apache-2.0.
 // HTTP protocol handlers for Durable Streams — engine-agnostic (see api.rs).
 
 use std::sync::Arc;

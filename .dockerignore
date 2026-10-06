@@ -1,2 +1,3 @@
+# Added by HyperSpaces (2026): Exclude Git metadata and build output from the image context. Original: durable-streams 0.1.5, Apache-2.0.
 .git
 target

@@ -1,3 +1,4 @@
+// Added by HyperSpaces (2026): Serve bounded read-only h2c through the existing handlers and Store. Original: durable-streams 0.1.5, Apache-2.0.
 //! Private, read-only h2c transport. One Store and the same protocol handlers as h1.
 use crate::{
     api::{Body, Method, Req, Resp, SECURITY_HEADERS},

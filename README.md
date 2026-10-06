@@ -1,3 +1,4 @@
+<!-- Modified by HyperSpaces (2026): Document the maintained fork while retaining the upstream README. Original: durable-streams 0.1.5, Apache-2.0. -->
 # HyperSpaces maintained Durable Streams fork
 
 Source provenance and the exact official release archive are recorded in

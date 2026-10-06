@@ -1,3 +1,4 @@
+<!-- Modified by HyperSpaces (2026): Record the native h2 fork and preserved storage behavior. Original: durable-streams 0.1.5, Apache-2.0. -->
 # HyperSpaces fork
 
 - Add the opt-in private `--h2-port` read listener (GET/HEAD/OPTIONS), with 1,024

@@ -1,3 +1,4 @@
+# Modified by HyperSpaces (2026): Add the h2 and HTTP transport dependencies. Original: durable-streams 0.1.5, Apache-2.0.
 [package]
 name = "durable-streams"
 version = "0.1.5"

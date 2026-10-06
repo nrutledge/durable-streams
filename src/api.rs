@@ -1,3 +1,4 @@
+// Modified by HyperSpaces (2026): Allow streaming sources to propagate file-read errors. Original: durable-streams 0.1.5, Apache-2.0.
 // HTTP request/response types shared between handlers and the raw HTTP engine.
 //
 // Handlers speak these types only; the engine adapts them to its transport.
