@@ -1,4 +1,4 @@
-<!-- Added by HyperSpaces (2026): Require attribution for all future fork edits. Original: durable-streams 0.1.5, Apache-2.0. -->
+<!-- Added by HyperSpaces (2026): Preserve received licensing and require current attribution for every fork edit. Original: durable-streams 0.1.5, Apache-2.0. -->
 # Fork attribution rules
 
 This fork is based on the imported Durable Streams 0.1.5 release at
@@ -36,6 +36,10 @@ This fork is based on the imported Durable Streams 0.1.5 release at
   and `NOTICE` under `/usr/share/doc/durable-streams/`. Coordinate every new deployment image
   digest with consumers that pin it; never replace an immutable pin silently.
 
-After committing, run `python3 scripts/check_attribution.py` and
+After committing, run `python3 scripts/check_attribution.py --change-base main` and
 `python3 scripts/check_attribution_test.py`. CI checks the committed tree against
-that fixed import, with full Git history, before tests or image publication.
+that fixed import for full coverage and retained legal-notice lines. It also
+compares notices to the actual PR base or pre-push commit, rejecting stale
+notices on repeat edits. JSON parsing rejects non-standard numeric constants.
+For local multi-commit work, use the branch base with `--change-base`. CI fetches
+full history and checks all of this before tests or image publication.

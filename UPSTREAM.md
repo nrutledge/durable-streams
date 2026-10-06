@@ -1,4 +1,4 @@
-<!-- Modified by HyperSpaces (2026): Record source provenance and the complete fork change inventory. Original: durable-streams 0.1.5, Apache-2.0. -->
+<!-- Modified by HyperSpaces (2026): Record received licensing, retained attribution and the current fork file inventory. Original: durable-streams 0.1.5, Apache-2.0. -->
 # Source provenance
 
 This public HyperSpaces fork starts from the official `durable-streams` 0.1.5
@@ -44,7 +44,8 @@ bears a first-line change notice (after a required shebang or Docker syntax dire
 For JSON or other commentless formats, the notice is in an adjacent
 `<filename>.NOTICE`; both files are inventoried, and the original data format
 is preserved. Its first line notices the sidecar itself; its second line
-notices the source file. The current fork has no changed JSON files.
+notices the source file. The current fork has no changed JSON files. CI requires the source filename
+in a sidecar summary and rejects non-standard JSON numeric constants.
 The inventory includes generated files and checks itself; deleted files are
 not distributed and are removed from the list. CI rejects missing notices,
 missing or incorrect entries, stale entries and any change to the received
@@ -52,6 +53,9 @@ license bytes before image publication. The received LICENSE SHA-256 is
 `0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`.
 The Apache appendix is application guidance following the license terms;
 the received file ends at `END OF TERMS AND CONDITIONS` and stays unchanged.
+Imported lines declaring licensing, copyright, authorship, patent, trademark
+or attribution must remain intact. Notices for repeat edits are checked
+against the actual PR base or pre-push commit, as well as the fixed import.
 [AGENTS.md](AGENTS.md) owns the rules for future edits.
 
 ### Fork file inventory
@@ -59,8 +63,8 @@ the received file ends at `END OF TERMS AND CONDITIONS` and stays unchanged.
 | File | Change | Description |
 | --- | --- | --- |
 | `.dockerignore` | Added | Exclude Git metadata and build output from the image context. |
-| `.github/workflows/image.yml` | Added | Test the fork, enforce attribution, and publish immutable GHCR images. |
-| `AGENTS.md` | Added | Require notices, inventory updates and preserved upstream attribution. |
+| `.github/workflows/image.yml` | Added | Verify current fork attribution and publish immutable tested GHCR images. |
+| `AGENTS.md` | Added | Require current notices, inventory updates and preserved received attribution. |
 | `CHANGELOG.md` | Modified | Record the native h2 fork and preserved storage behavior. |
 | `Cargo.lock` | Modified | Lock the h2 transport dependencies. |
 | `Cargo.toml` | Modified | Add the h2 and HTTP transport dependencies. |
@@ -68,9 +72,9 @@ the received file ends at `END OF TERMS AND CONDITIONS` and stays unchanged.
 | `LICENSE` | Added | Distribute the received Apache-2.0 license text unchanged; attribution is in NOTICE. |
 | `NOTICE` | Added | Record fork changes and retain upstream attribution separately from the license. |
 | `README.md` | Modified | Document the maintained fork while retaining the upstream README. |
-| `UPSTREAM.md` | Modified | Record source provenance and the complete fork change inventory. |
-| `scripts/check_attribution.py` | Added | Check exact received license bytes, file notices and the fixed-import inventory. |
-| `scripts/check_attribution_test.py` | Added | Verify exact license integrity, source-format notices and inventory failures using real Git. |
+| `UPSTREAM.md` | Modified | Record received licensing, retained attribution and the current fork file inventory. |
+| `scripts/check_attribution.py` | Added | Check received license bytes, retained notices, current edits and the fixed-import inventory. |
+| `scripts/check_attribution_test.py` | Added | Verify license integrity, retained attribution, fresh notices and strict format handling using real Git. |
 | `src/api.rs` | Modified | Allow streaming sources to propagate file-read errors. |
 | `src/engine_h2.rs` | Added | Serve bounded read-only h2c through the existing handlers and Store. |
 | `src/engine_raw.rs` | Modified | Abort HTTP/1 streaming bodies on source errors. |

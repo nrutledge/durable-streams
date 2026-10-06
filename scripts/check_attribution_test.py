@@ -1,4 +1,4 @@
-# Added by HyperSpaces (2026): Exercise the attribution gate against real Git histories. Original: durable-streams 0.1.5, Apache-2.0.
+# Added by HyperSpaces (2026): Guard license integrity, retained attribution, fresh notices and strict source formats. Original: durable-streams 0.1.5, Apache-2.0.
 import os
 from pathlib import Path
 import subprocess
@@ -16,6 +16,7 @@ class AttributionTest(unittest.TestCase):
         self.git("init", "-q")
         self.write("Cargo.toml", '# Upstream copyright remains here.\n[package]\nname = "durable-streams"\n')
         self.write("UPSTREAM.md", "# Original source provenance\n")
+        self.write("npm/README.md", "# Durable Streams npm package\n\nLicensed under Apache-2.0.\n")
         self.write("package.json", '{"name":"durable-streams","version":"0.1.5"}\n')
         self.commit()
         self.base = self.git("rev-parse", "HEAD").strip()
@@ -41,7 +42,7 @@ class AttributionTest(unittest.TestCase):
 
     def run_check(self):
         self.commit()
-        return subprocess.run(["python3", str(CHECKER), "--repo", str(self.repo), "--base", self.base],
+        return subprocess.run(["python3", str(CHECKER), "--repo", str(self.repo), "--base", self.base, "--change-base", getattr(self, "change_base", self.base)],
                               capture_output=True, text=True)
 
     def test_complete_inventory_and_notices_pass(self):
@@ -109,6 +110,43 @@ class AttributionTest(unittest.TestCase):
         result = self.run_check()
         self.assertEqual(result.returncode, 1)
         self.assertIn("package.json: invalid source", result.stderr)
+
+    def test_repeat_edit_requires_a_fresh_notice(self):
+        self.commit()
+        self.change_base = self.git("rev-parse", "HEAD").strip()
+        p = self.repo / "Cargo.toml"
+        p.write_text(p.read_text() + 'version = "0.1.6"\n')
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Cargo.toml: update the change notice", result.stderr)
+        p.write_text(p.read_text().replace("Add h2 dependencies.", "Update the fork version to 0.1.6."))
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_imported_legal_notice_cannot_be_removed(self):
+        self.write("npm/README.md", "<!-- Modified by HyperSpaces (2026): Document the fork package. Original: durable-streams 0.1.5, Apache-2.0. -->\n# Durable Streams npm package\n")
+        p = self.repo / "UPSTREAM.md"
+        p.write_text(p.read_text() + '| `npm/README.md` | Modified | Document the fork package. |\n')
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("npm/README.md: preserve imported attribution line: Licensed under Apache-2.0.", result.stderr)
+
+    def test_sidecar_must_name_its_source(self):
+        self.add_json_change()
+        p = self.repo / "package.json.NOTICE"
+        p.write_text(p.read_text().replace("Update package.json version", "Update the version"))
+        result = self.run_check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("package.json: adjacent notice summary must name package.json", result.stderr)
+
+    def test_json_nonstandard_constants_are_rejected(self):
+        self.add_json_change()
+        for value in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(value=value):
+                self.write("package.json", '{"value":' + value + '}\n')
+                result = self.run_check()
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Non-standard JSON constant", result.stderr)
 
     def test_added_file_without_notice_fails(self):
         self.write("src/engine_h2.rs", "// Native h2 transport.\n")

@@ -1,4 +1,4 @@
-# Added by HyperSpaces (2026): Test the fork, enforce attribution, and publish immutable GHCR images. Original: durable-streams 0.1.5, Apache-2.0.
+# Added by HyperSpaces (2026): Verify current fork attribution and publish immutable tested GHCR images. Original: durable-streams 0.1.5, Apache-2.0.
 name: Durable Streams image
 on:
   push:
@@ -18,8 +18,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Check Apache attribution
+        env:
+          CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          python3 scripts/check_attribution.py
+          python3 scripts/check_attribution.py --change-base "$CHANGE_BASE"
           python3 scripts/check_attribution_test.py
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
