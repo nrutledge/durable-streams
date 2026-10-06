@@ -32,6 +32,9 @@ def check(repo, base):
     for path, kind in changed.items():
         if inventory.get(path) != kind:
             errors.append(f"{path}: missing or incorrect {kind} entry in UPSTREAM.md")
+        # LICENSE remains the exact legal text; its attribution is in NOTICE.
+        if path == "LICENSE":
+            continue
         try:
             lines = (repo / path).read_text().splitlines()
         except (OSError, UnicodeError) as error:
@@ -71,7 +74,8 @@ def main():
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    print(f"Attribution check passed: {count} changed files have notices and inventory entries.")
+    print(f"Attribution check passed: {count} changed files have inventory entries "
+          "and required notices (LICENSE is exempt from notices).")
     return 0
 
 

@@ -47,6 +47,16 @@ class AttributionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("3 changed files", result.stdout)
 
+    def test_license_keeps_exact_text_without_a_notice(self):
+        license_text = CHECKER.parents[1].joinpath("LICENSE").read_text()
+        self.assertTrue(license_text.lstrip().startswith("Apache License"))
+        self.write("LICENSE", license_text)
+        p = self.repo / "UPSTREAM.md"
+        p.write_text(p.read_text() + '| `LICENSE` | Added | Preserve the complete Apache license. |\n')
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.repo / "LICENSE").read_text(), license_text)
+
     def test_added_file_without_notice_fails(self):
         self.write("src/engine_h2.rs", "// Native h2 transport.\n")
         result = self.run_check()

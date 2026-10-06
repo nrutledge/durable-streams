@@ -1,0 +1,18 @@
+Added by HyperSpaces (2026): Record fork changes and retain upstream attribution. Original: durable-streams 0.1.5, Apache-2.0.
+
+HyperSpaces maintained Durable Streams fork
+
+Based on durable-streams 0.1.5, originally published by Electric under the
+Apache License, Version 2.0. The complete unmodified license is in LICENSE.
+
+Upstream project: https://github.com/electric-sql/electric
+Original source path: packages/durable-streams-rust
+Published release and archive checksum: see UPSTREAM.md.
+
+HyperSpaces adds a native read-only h2c transport, bounded connections and
+coordinated reader shutdown, using the original handlers and Store. The
+complete file-by-file changes are listed in UPSTREAM.md.
+
+The imported release did not contain a NOTICE file. This file records the
+fork's attribution; it does not change the Apache License terms. Retain any
+relevant upstream NOTICE content if one is supplied in a later release.
