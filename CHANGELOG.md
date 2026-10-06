@@ -6,6 +6,9 @@
   persistence/WAL formats are unchanged.
 - Frame responses with bounded 16 KiB file reads and h2 flow control. Reject
   payload-bearing read requests, strip h1-only headers, and reset failed bodies.
+- Preserve SSE source I/O errors as response failures instead of clean EOF,
+  including real truncated-history coverage. The upstream SSE batch allocation
+  is retained; flow-control limits bound transport buffers, not batch size.
 - Reader cancellation drops that one source without closing shared connections.
 - Publish commit-tagged images in CI; downstream deployments pin the digest.
 

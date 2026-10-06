@@ -25,7 +25,8 @@ use crate::store::Segment;
 pub trait EventSource: Send {
     /// Produce the next framed chunk, or `None` to end the stream. The returned
     /// future borrows `self`, so state lives in the source (no channel buffer).
-    fn next_chunk(&mut self) -> Pin<Box<dyn Future<Output = Option<Bytes>> + Send + '_>>;
+    /// An I/O error must abort the response, never produce a clean end.
+    fn next_chunk(&mut self) -> Pin<Box<dyn Future<Output = std::io::Result<Option<Bytes>>> + Send + '_>>;
 
     /// Reactor eligibility (Linux). When this returns `Some`, the connection task
     /// hands the socket to the epoll reactor instead of driving the stream

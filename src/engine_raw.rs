@@ -332,13 +332,12 @@ async fn write_response(
             debug_assert!(body_len.is_none());
             // SSE events are small; `frame_chunk` grows this on demand.
             let mut frame: Vec<u8> = Vec::with_capacity(512);
-            while let Some(b) = src.next_chunk().await {
+            while let Some(b) = src.next_chunk().await? {
                 frame.clear();
                 http1::frame_chunk(&mut frame, &b);
                 stream.write_all(&frame).await?;
             }
-            // SSE is infallible (the client reconnects from its last offset), so
-            // always terminate cleanly.
+            // Only a successful source completion terminates cleanly.
             stream.write_all(b"0\r\n\r\n").await?;
         }
         Body::Channel(crate::api::StreamBody { mut rx, failed }) => {

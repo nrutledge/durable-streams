@@ -174,7 +174,7 @@ async fn body(body: Body, send: &mut SendStream<Bytes>) -> io::Result<()> {
                 },
                 chunk = source.next_chunk() => chunk,
             };
-            let Some(chunk) = chunk else { break };
+            let Some(chunk) = chunk? else { break };
             send_bytes(send, chunk).await?;
         },
         Body::Channel(crate::api::StreamBody { mut rx, failed }) => {
@@ -313,7 +313,7 @@ mod tests {
         let h2_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let h2_address = h2_listener.local_addr().unwrap();
         let h1_server = tokio::spawn(crate::engine_raw::serve(store.clone(), h1_listener));
-        let h2_server = tokio::spawn(serve(store, h2_listener));
+        let h2_server = tokio::spawn(serve(store.clone(), h2_listener));
         // Larger than transport windows: file ranges must make bounded progress.
         let payload = vec![b'a'; 1024 * 1024];
         assert!(h1(h1_address, "PUT", "/v1/stream/h2", &payload)
@@ -364,6 +364,26 @@ mod tests {
             .unwrap();
         assert_eq!(read(&sender, "GET", "/health").await.status(), 200);
         drop(staying);
+        // A damaged historical range misses the resident tail cache. The
+        // existing SSE source must report its real file I/O error as RST_STREAM,
+        // preserving the last offset and this shared connection's other reads.
+        let state = store.get("/v1/stream/h2").unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&state.file_path)
+            .unwrap()
+            .set_len(0)
+            .unwrap();
+        let mut broken = read(&sender, "GET", "/v1/stream/h2?offset=-1&live=sse").await;
+        assert_eq!(broken.status(), 200);
+        let error = tokio::time::timeout(Duration::from_secs(2), broken.body_mut().data())
+            .await
+            .unwrap()
+            .expect("failed SSE ended cleanly")
+            .unwrap_err();
+        assert_eq!(error.reason(), Some(Reason::INTERNAL_ERROR));
+        assert_eq!(read(&sender, "GET", "/health").await.status(), 200);
+        drop(broken);
         h1_server.abort();
         h2_server.abort();
         driver.abort();

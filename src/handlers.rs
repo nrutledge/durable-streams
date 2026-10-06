@@ -1874,9 +1874,9 @@ impl SseSource {
     /// Produce the next SSE event, or `None` to end the stream. Mirrors the
     /// original producer loop, but returns one frame per call (state persists in
     /// `self`) so it can run inline without a channel.
-    async fn next(&mut self) -> Option<Bytes> {
+    async fn next(&mut self) -> std::io::Result<Option<Bytes>> {
         if self.done {
-            return None;
+            return Ok(None);
         }
         loop {
             let t = *self.rxw.borrow_and_update();
@@ -1897,9 +1897,9 @@ impl SseSource {
                             Ok(d) => d,
                             // End the stream without advancing `pos`: the client
                             // reconnects from its last offset, never skipping a gap.
-                            Err(_) => {
+                            Err(error) => {
                                 self.done = true;
-                                return None;
+                                return Err(error);
                             }
                         }
                     }
@@ -1926,13 +1926,13 @@ impl SseSource {
                 if closed_now {
                     self.done = true;
                 }
-                return Some(Bytes::from(ev));
+                return Ok(Some(Bytes::from(ev)));
             }
             if t.closed && self.pos >= t.bytes {
                 let mut ev = String::new();
                 sse_control_event(&mut ev, self.pos, compute_cursor(self.client_cursor), true, true);
                 self.done = true;
-                return Some(Bytes::from(ev));
+                return Ok(Some(Bytes::from(ev)));
             }
             // Initial control event when starting caught-up (once).
             if !self.sent_initial
@@ -1944,7 +1944,7 @@ impl SseSource {
                 let mut ev = String::new();
                 sse_control_event(&mut ev, self.pos, compute_cursor(self.client_cursor), true, false);
                 self.sent_initial = true;
-                return Some(Bytes::from(ev));
+                return Ok(Some(Bytes::from(ev)));
             }
             // Idle wait: bounded by the total SSE duration, but woken early by new
             // data and broken into keep-alive intervals so an idle stream still
@@ -1952,14 +1952,14 @@ impl SseSource {
             let now = Instant::now();
             if now >= self.deadline {
                 self.done = true;
-                return None; // total cap reached; client reconnects
+                return Ok(None); // total cap reached; client reconnects
             }
             let wait = SSE_KEEPALIVE.min(self.deadline - now);
             tokio::select! {
                 r = self.rxw.changed() => {
                     if r.is_err() {
                         self.done = true;
-                        return None;
+                        return Ok(None);
                     }
                 }
                 _ = tokio::time::sleep(wait) => {
@@ -1967,7 +1967,7 @@ impl SseSource {
                     // control (still open here — the close path returns above).
                     let mut ev = String::new();
                     sse_control_event(&mut ev, self.pos, compute_cursor(self.client_cursor), true, false);
-                    return Some(Bytes::from(ev));
+                    return Ok(Some(Bytes::from(ev)));
                 }
             }
         }
@@ -1977,7 +1977,7 @@ impl SseSource {
 impl crate::api::EventSource for SseSource {
     fn next_chunk(
         &mut self,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<Bytes>> + Send + '_>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<Option<Bytes>>> + Send + '_>> {
         Box::pin(self.next())
     }
 
