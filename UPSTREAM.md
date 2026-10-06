@@ -1,3 +1,4 @@
+<!-- Modified by HyperSpaces (2026): Record source provenance and the complete fork change inventory. Original: durable-streams 0.1.5, Apache-2.0. -->
 # Source provenance
 
 This public HyperSpaces fork starts from the official `durable-streams` 0.1.5
@@ -25,3 +26,43 @@ readers are aborted; committers stop after both drains. File-read failures abort
 the affected h2 response or h1 SSE body, including Linux reactor reads, rather
 than emitting a successful end. The real transport regression covers these
 paths with flow-controlled catch-up, an idle reader and a truncated root file.
+
+## Apache-2.0 attribution
+
+The complete Apache-2.0 license is in [LICENSE](LICENSE). The imported crate did
+not include that file; the fork supplies the license verbatim beneath a separate
+addition notice. Existing upstream source and documentation attribution is
+retained. The imported source contains no `NOTICE` file; if upstream adds one,
+carry its relevant notices into all distributions. Runtime images package the
+license and this provenance under `/usr/share/doc/durable-streams/`.
+
+Every added or modified file relative to import
+`d286a4b2ebfd040908ae9f07849582707774a125` is listed below. Each also bears a
+first-line change notice (after a required shebang or Docker syntax directive).
+The inventory includes generated files and checks itself; deleted files are
+not distributed and are removed from the list. CI rejects missing notices,
+missing or incorrect entries, and stale entries before image publication.
+[AGENTS.md](AGENTS.md) owns the rules for future edits.
+
+### Fork file inventory
+
+| File | Change | Description |
+| --- | --- | --- |
+| `.dockerignore` | Added | Exclude Git metadata and build output from the image context. |
+| `.github/workflows/image.yml` | Added | Test the fork, enforce attribution, and publish immutable GHCR images. |
+| `AGENTS.md` | Added | Require notices, inventory updates and preserved upstream attribution. |
+| `CHANGELOG.md` | Modified | Record the native h2 fork and preserved storage behavior. |
+| `Cargo.lock` | Modified | Lock the h2 transport dependencies. |
+| `Cargo.toml` | Modified | Add the h2 and HTTP transport dependencies. |
+| `Dockerfile` | Modified | Build the fork with both listeners and package its license and provenance. |
+| `LICENSE` | Added | Distribute the complete original Apache-2.0 license text. |
+| `README.md` | Modified | Document the maintained fork while retaining the upstream README. |
+| `UPSTREAM.md` | Modified | Record source provenance and the complete fork change inventory. |
+| `scripts/check_attribution.py` | Added | Check notices and the inventory against the fixed imported Git tree. |
+| `scripts/check_attribution_test.py` | Added | Verify the attribution gate using real Git additions, edits and deletions. |
+| `src/api.rs` | Modified | Allow streaming sources to propagate file-read errors. |
+| `src/engine_h2.rs` | Added | Serve bounded read-only h2c through the existing handlers and Store. |
+| `src/engine_raw.rs` | Modified | Abort HTTP/1 streaming bodies on source errors. |
+| `src/handlers.rs` | Modified | Preserve SSE file errors and verify damaged-history behavior. |
+| `src/main.rs` | Modified | Wire the optional h2 listener and coordinated shutdown drain. |
+| `src/sse_reactor.rs` | Modified | Abort Linux reactor SSE responses on file-read failures. |

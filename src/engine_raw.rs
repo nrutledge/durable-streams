@@ -1,3 +1,4 @@
+// Modified by HyperSpaces (2026): Abort HTTP/1 streaming bodies on source errors. Original: durable-streams 0.1.5, Apache-2.0.
 // Minimal HTTP/1.1 engine ("raw"): tokio + httparse, no framework.
 //
 // Owning the socket lets this engine serve Body::FileRange without going

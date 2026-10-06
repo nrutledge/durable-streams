@@ -1,3 +1,4 @@
+// Modified by HyperSpaces (2026): Wire the optional h2 listener and coordinated shutdown drain. Original: durable-streams 0.1.5, Apache-2.0.
 mod api;
 mod blobstore;
 mod engine_raw;

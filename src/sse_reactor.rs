@@ -1,3 +1,4 @@
+// Modified by HyperSpaces (2026): Abort Linux reactor SSE responses on file-read failures. Original: durable-streams 0.1.5, Apache-2.0.
 //! Per-core epoll reactor for live-tail SSE subscribers (Linux only).
 //!
 //! A live SSE subscriber otherwise costs a whole connection task future (sized to
