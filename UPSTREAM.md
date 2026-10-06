@@ -29,7 +29,7 @@ paths with flow-controlled catch-up, an idle reader and a truncated root file.
 
 ## Apache-2.0 attribution
 
-The complete Apache-2.0 license is in [LICENSE](LICENSE). The imported crate did
+The received Apache-2.0 license text is in [LICENSE](LICENSE). The imported crate did
 not include that file; the fork supplies it exactly as published, with no
 addition notice or other text inside the legal document. Fork attribution
 is in [NOTICE](NOTICE). Existing upstream source and documentation attribution is
@@ -41,9 +41,17 @@ provenance under `/usr/share/doc/durable-streams/`.
 Every added or modified file relative to import
 `d286a4b2ebfd040908ae9f07849582707774a125` is listed below. Each except the unmodified legal document `LICENSE` also
 bears a first-line change notice (after a required shebang or Docker syntax directive).
+For JSON or other commentless formats, the notice is in an adjacent
+`<filename>.NOTICE`; both files are inventoried, and the original data format
+is preserved. Its first line notices the sidecar itself; its second line
+notices the source file. The current fork has no changed JSON files.
 The inventory includes generated files and checks itself; deleted files are
 not distributed and are removed from the list. CI rejects missing notices,
-missing or incorrect entries, and stale entries before image publication.
+missing or incorrect entries, stale entries and any change to the received
+license bytes before image publication. The received LICENSE SHA-256 is
+`0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594`.
+The Apache appendix is application guidance following the license terms;
+the received file ends at `END OF TERMS AND CONDITIONS` and stays unchanged.
 [AGENTS.md](AGENTS.md) owns the rules for future edits.
 
 ### Fork file inventory
@@ -57,12 +65,12 @@ missing or incorrect entries, and stale entries before image publication.
 | `Cargo.lock` | Modified | Lock the h2 transport dependencies. |
 | `Cargo.toml` | Modified | Add the h2 and HTTP transport dependencies. |
 | `Dockerfile` | Modified | Build the fork with both listeners and package its license, notices and provenance. |
-| `LICENSE` | Added | Distribute the complete original Apache-2.0 license text unchanged; attribution is in NOTICE. |
+| `LICENSE` | Added | Distribute the received Apache-2.0 license text unchanged; attribution is in NOTICE. |
 | `NOTICE` | Added | Record fork changes and retain upstream attribution separately from the license. |
 | `README.md` | Modified | Document the maintained fork while retaining the upstream README. |
 | `UPSTREAM.md` | Modified | Record source provenance and the complete fork change inventory. |
-| `scripts/check_attribution.py` | Added | Check notices and the inventory against the fixed imported Git tree. |
-| `scripts/check_attribution_test.py` | Added | Verify the attribution gate using real Git additions, edits and deletions. |
+| `scripts/check_attribution.py` | Added | Check exact received license bytes, file notices and the fixed-import inventory. |
+| `scripts/check_attribution_test.py` | Added | Verify exact license integrity, source-format notices and inventory failures using real Git. |
 | `src/api.rs` | Modified | Allow streaming sources to propagate file-read errors. |
 | `src/engine_h2.rs` | Added | Serve bounded read-only h2c through the existing handlers and Store. |
 | `src/engine_raw.rs` | Modified | Abort HTTP/1 streaming bodies on source errors. |

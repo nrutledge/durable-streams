@@ -3,7 +3,7 @@ Added by HyperSpaces (2026): Record fork changes and retain upstream attribution
 HyperSpaces maintained Durable Streams fork
 
 Based on durable-streams 0.1.5, originally published by Electric under the
-Apache License, Version 2.0. The complete unmodified license is in LICENSE.
+Apache License, Version 2.0. The received unmodified license is in LICENSE.
 
 Upstream project: https://github.com/electric-sql/electric
 Original source path: packages/durable-streams-rust
