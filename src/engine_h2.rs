@@ -7,13 +7,14 @@ use crate::{
 use bytes::Bytes;
 use h2::{Reason, SendStream};
 use std::{
+    future::Future,
     io,
     sync::{atomic::Ordering, Arc},
     time::Duration,
 };
 use tokio::{
     net::{TcpListener, TcpStream},
-    sync::Semaphore,
+    sync::{watch, Semaphore},
     task::JoinSet,
 };
 
@@ -22,19 +23,27 @@ const MAX_CONNECTIONS: usize = 256;
 const CHUNK: usize = 16 * 1024;
 const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub async fn serve(store: Arc<Store>, listener: TcpListener) {
+pub async fn serve(
+    store: Arc<Store>,
+    listener: TcpListener,
+    shutdown: impl Future<Output = ()>,
+    grace: Duration,
+) {
     let admission = Arc::new(Semaphore::new(MAX_CONNECTIONS));
-    // Dropping this accept loop also aborts its connections and their readers.
+    let (stop, shutdown_connections) = watch::channel(false);
     let mut connections = JoinSet::new();
+    tokio::pin!(shutdown);
     loop {
         tokio::select! {
+            _ = &mut shutdown => break,
             result = listener.accept() => match result {
                 Ok((socket, _)) => {
                     let Ok(permit) = admission.clone().try_acquire_owned() else { continue };
                     let store = store.clone();
+                    let shutdown = shutdown_connections.clone();
                     connections.spawn(async move {
                         let _permit = permit;
-                        if let Err(error) = connection(store, socket).await {
+                        if let Err(error) = connection(store, socket, shutdown).await {
                             tracing::debug!(%error, "DS h2 connection ended");
                         }
                     });
@@ -47,9 +56,21 @@ pub async fn serve(store: Arc<Store>, listener: TcpListener) {
             Some(_) = connections.join_next(), if !connections.is_empty() => {}
         }
     }
+    // Stop new sockets and send GOAWAY while existing responses finish. At the
+    // shared grace deadline, dropping the JoinSet aborts remaining readers.
+    drop(listener);
+    let _ = stop.send(true);
+    let _ = tokio::time::timeout(grace, async {
+        while connections.join_next().await.is_some() {}
+    })
+    .await;
 }
 
-async fn connection(store: Arc<Store>, socket: TcpStream) -> io::Result<()> {
+async fn connection(
+    store: Arc<Store>,
+    socket: TcpStream,
+    mut shutdown: watch::Receiver<bool>,
+) -> io::Result<()> {
     socket.set_nodelay(true)?;
     let mut builder = h2::server::Builder::new();
     builder
@@ -58,13 +79,21 @@ async fn connection(store: Arc<Store>, socket: TcpStream) -> io::Result<()> {
         .initial_connection_window_size(4 * 1024 * 1024)
         .max_send_buffer_size(CHUNK)
         .max_header_list_size(16 * 1024);
-    let mut connection = tokio::time::timeout(Duration::from_secs(10), builder.handshake(socket))
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "h2 handshake"))?
-        .map_err(io::Error::other)?;
+    let mut connection = tokio::select! {
+        _ = shutdown.changed() => return Ok(()),
+        result = tokio::time::timeout(Duration::from_secs(10), builder.handshake(socket)) => {
+            result.map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "h2 handshake"))?
+                .map_err(io::Error::other)?
+        }
+    };
     let mut readers = JoinSet::new();
+    let mut draining = false;
     loop {
         tokio::select! {
+            _ = shutdown.changed(), if !draining => {
+                draining = true;
+                connection.graceful_shutdown();
+            },
             request = connection.accept() => {
                 let Some(request) = request else { return Ok(()) };
                 let (request, mut reply) = request.map_err(io::Error::other)?;
@@ -313,7 +342,15 @@ mod tests {
         let h2_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let h2_address = h2_listener.local_addr().unwrap();
         let h1_server = tokio::spawn(crate::engine_raw::serve(store.clone(), h1_listener));
-        let h2_server = tokio::spawn(serve(store.clone(), h2_listener));
+        let (stop, shutdown) = tokio::sync::oneshot::channel();
+        let h2_server = tokio::spawn(serve(
+            store.clone(),
+            h2_listener,
+            async {
+                let _ = shutdown.await;
+            },
+            Duration::from_secs(2),
+        ));
         // Larger than transport windows: file ranges must make bounded progress.
         let payload = vec![b'a'; 1024 * 1024];
         assert!(h1(h1_address, "PUT", "/v1/stream/h2", &payload)
@@ -384,11 +421,59 @@ mod tests {
         assert_eq!(error.reason(), Some(Reason::INTERNAL_ERROR));
         assert_eq!(read(&sender, "GET", "/health").await.status(), 200);
         drop(broken);
+        #[cfg(target_os = "linux")]
+        {
+            // The same damaged root range takes the real Linux reactor path.
+            // A file failure must close without a successful chunk terminator.
+            let response = tokio::time::timeout(
+                Duration::from_secs(2),
+                h1(h1_address, "GET", "/v1/stream/h2?offset=-1&live=sse", b""),
+            )
+            .await
+            .unwrap();
+            assert!(
+                !response.ends_with(b"0\r\n\r\n"),
+                "reactor hid file error as clean EOF"
+            );
+            assert!(h1(h1_address, "GET", "/health", b"")
+                .await
+                .starts_with(b"HTTP/1.1 200"));
+        }
+        // An unread finite response exceeds the flow-control window. Shutdown
+        // must let it finish, then bound the remaining idle live reader's drain.
+        assert!(h1(h1_address, "PUT", "/v1/stream/drain", &payload)
+            .await
+            .starts_with(b"HTTP/1.1 201"));
+        let mut live = read(&sender, "GET", "/v1/stream/drain?offset=now&live=sse").await;
+        let initial = live.body_mut().data().await.unwrap().unwrap();
+        live.body_mut()
+            .flow_control()
+            .release_capacity(initial.len())
+            .unwrap();
+        // Establish the idle reader before the unread finite body consumes the
+        // client connection window, so setup cannot wait for its own drain.
+        let finite = read(&sender, "GET", "/v1/stream/drain?offset=-1").await;
+        let started = tokio::time::Instant::now();
+        stop.send(()).unwrap();
+        assert_eq!(collect(finite).await, payload);
+        assert!(
+            !h2_server.is_finished(),
+            "idle reader skipped the drain grace"
+        );
+        tokio::time::timeout(Duration::from_secs(3), h2_server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(started.elapsed() >= Duration::from_secs(2));
+        let ended = tokio::time::timeout(Duration::from_secs(1), live.body_mut().data())
+            .await
+            .unwrap()
+            .expect("forced drain ended cleanly")
+            .unwrap_err();
+        assert!(ended.is_io() || ended.reason().is_some());
         h1_server.abort();
-        h2_server.abort();
         driver.abort();
         let _ = h1_server.await;
-        let _ = h2_server.await;
         let _ = driver.await;
         std::fs::remove_dir_all(dir).unwrap();
     }

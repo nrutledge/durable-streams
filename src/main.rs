@@ -449,24 +449,30 @@ fn main() {
             Some(port) => Some(TcpListener::bind(SocketAddr::from((host, port))).await.expect("h2 bind failed")),
             None => None,
         };
+        let (stop_h2, shutdown_h2) = tokio::sync::oneshot::channel();
         let h2 = async {
             if let Some(listener) = h2_listener {
                 println!("durable-streams-server h2c reads on {}", listener.local_addr().unwrap());
-                engine_h2::serve(store.clone(), listener).await;
-            } else { std::future::pending::<()>().await; }
+                engine_h2::serve(store.clone(), listener,
+                    async { let _ = shutdown_h2.await; },
+                    std::time::Duration::from_secs(25)).await;
+            } else { let _ = shutdown_h2.await; }
         };
+        tokio::pin!(h2);
         tokio::select! {
             _ = engine_raw::serve(store.clone(), listener) => {}
-            _ = h2 => {}
+            _ = &mut h2 => {}
             _ = shutdown_signal() => {
-                // Stop accepting (the serve future is dropped here), let in-flight
+                // Stop h1 accepting by dropping its serve future. Keep h2 alive
+                // for GOAWAY and drain, and let in-flight
                 // requests — including their group-commit fsync — finish, then flush
                 // telemetry. Bounded so a stuck request can't block shutdown forever.
                 // Close reactor-served SSE subscribers first so their permits are
                 // released and `drain` doesn't wait out the full grace period.
                 #[cfg(target_os = "linux")]
                 sse_reactor::shutdown();
-                engine_raw::drain(std::time::Duration::from_secs(25)).await;
+                let _ = stop_h2.send(());
+                tokio::join!(engine_raw::drain(std::time::Duration::from_secs(25)), &mut h2);
                 // Stop + join the dedicated committer threads (Tier-2a) AFTER the
                 // request drain, so any commit a just-drained request staged is
                 // covered by each committer's final drain before the thread exits.

@@ -385,9 +385,12 @@ impl Reactor {
                 }
                 let want = (tail - sub.write_off) as usize;
                 let mut data = vec![0u8; want];
-                if pread_exact(&file, sub.write_off - file_base, &mut data).is_err() {
-                    sub.done = true;
-                    frame_terminator(&mut sub.pending);
+                if let Err(error) = pread_exact(&file, sub.write_off - file_base, &mut data) {
+                    // Missing/corrupt bytes are not a successful SSE end. Close
+                    // without a terminating chunk so the reader resumes its
+                    // last delivered offset instead of accepting a clean EOF.
+                    tracing::debug!(%error, "SSE reactor read aborted");
+                    self.close(key);
                     return;
                 }
                 let mut ev = String::new();
