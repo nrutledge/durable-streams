@@ -1,6 +1,6 @@
 # Source provenance
 
-This private HyperSpaces fork starts from the official `durable-streams` 0.1.5
+This public HyperSpaces fork starts from the official `durable-streams` 0.1.5
 crate, published by Electric. It is **not** the unrelated
 `durable-streams-server` crate.
 
