@@ -1,4 +1,4 @@
-// Added by HyperSpaces (2026): Serve bounded read-only h2c through the existing handlers and Store. Original: durable-streams 0.1.5, Apache-2.0.
+// Added by HyperSpaces (2026): Verify capped immutable raw ranges over native h2 alongside cancellation and shutdown. Original: durable-streams 0.1.5, Apache-2.0.
 //! Private, read-only h2c transport. One Store and the same protocol handlers as h1.
 use crate::{
     api::{Body, Method, Req, Resp, SECURITY_HEADERS},
@@ -286,8 +286,13 @@ mod tests {
         path: &str,
         payload: &[u8],
     ) -> Vec<u8> {
+        h1_content(address, method, path, payload, "application/octet-stream").await
+    }
+
+    async fn h1_content(address: std::net::SocketAddr, method: &str, path: &str,
+        payload: &[u8], content_type: &str) -> Vec<u8> {
         let mut socket = TcpStream::connect(address).await.unwrap();
-        socket.write_all(format!("{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n", payload.len()).as_bytes()).await.unwrap();
+        socket.write_all(format!("{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n\r\n", payload.len()).as_bytes()).await.unwrap();
         socket.write_all(payload).await.unwrap();
         let mut response = Vec::new();
         socket.read_to_end(&mut response).await.unwrap();
@@ -322,6 +327,73 @@ mod tests {
             bytes.extend_from_slice(&chunk);
         }
         bytes
+    }
+
+    #[tokio::test]
+    async fn raw_range_crosses_sealed_tail_boundary_and_rejects_damaged_storage() {
+        let _guard = crate::handlers::test_support::DurabilityGuard::memory();
+        let dir = std::env::temp_dir().join(format!("ds-raw-tier-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let store = Arc::new(Store::new_with_tier(dir.clone(), crate::tier::TierConfig {
+            kind: crate::tier::TierKind::Local, segment_bytes: 256 * 1024,
+            compact_bytes: 256 * 1024, local_dir: Some(dir.join("cold")), ..Default::default()
+        }).unwrap());
+        let h1_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let h1_address = h1_listener.local_addr().unwrap();
+        let h1_server = tokio::spawn(crate::engine_raw::serve(store.clone(), h1_listener));
+        let h2_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let h2_address = h2_listener.local_addr().unwrap();
+        let (stop, shutdown) = tokio::sync::oneshot::channel();
+        let h2_server = tokio::spawn(serve(store.clone(), h2_listener,
+            async { let _ = shutdown.await; }, Duration::from_secs(2)));
+        let payload: Vec<u8> = (0..256 * 1024 + 1000).map(|index| (index % 251) as u8).collect();
+        assert!(h1(h1_address, "PUT", "/v1/stream/tier-range", &payload).await.starts_with(b"HTTP/1.1 201"));
+        let state = store.get("/v1/stream/tier-range").unwrap();
+        store.maybe_seal(&state).await;
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if !state.tier.manifest.lock().unwrap().offloading { break; }
+                tokio::task::yield_now().await;
+            }
+        }).await.unwrap();
+        let sealed = state.tier.manifest.lock().unwrap().sealed_offset;
+        assert_eq!(sealed, 256 * 1024);
+        let key = match &state.tier.manifest.lock().unwrap().segments[0].placement {
+            crate::tier::Placement::Remote(key) => key.clone(), _ => panic!("segment not offloaded"),
+        };
+        let (sender, driver) = h2::client::handshake(TcpStream::connect(h2_address).await.unwrap()).await.unwrap();
+        let driver = tokio::spawn(driver);
+        let response = read(&sender, "GET", "/v1/stream/tier-range?range=bytes=-1048576").await;
+        assert_eq!(response.status(), 206);
+        let cut = response.headers()["stream-read-cut"].to_str().unwrap().to_string();
+        assert_eq!(collect(response).await, payload);
+        let path = format!("/v1/stream/tier-range?range=bytes={}-{}&cut={cut}", sealed - 10, sealed + 9);
+        assert_eq!(collect(read(&sender, "GET", &path).await).await, payload[sealed as usize - 10..sealed as usize + 10]);
+
+        // The mixed range cannot be served by the resident tail cache. A short
+        // backing file must reset the response rather than claim complete bytes.
+        std::fs::OpenOptions::new().write(true).open(&state.file_path).unwrap().set_len(0).unwrap();
+        let mut truncated = read(&sender, "GET", &path).await;
+        assert_eq!(truncated.status(), 206);
+        let result = tokio::time::timeout(Duration::from_secs(2), async {
+            while let Some(chunk) = truncated.body_mut().data().await {
+                match chunk {
+                    Err(error) => return Some(error.reason()),
+                    Ok(bytes) => truncated.body_mut().flow_control().release_capacity(bytes.len()).unwrap(),
+                }
+            }
+            None
+        }).await.unwrap();
+        assert_eq!(result, Some(Some(Reason::INTERNAL_ERROR)));
+        std::fs::remove_file(dir.join("cold").join(key.replace('/', "_"))).unwrap();
+        let mut missing = read(&sender, "GET", &path).await;
+        assert_eq!(missing.status(), 206);
+        assert_eq!(tokio::time::timeout(Duration::from_secs(2), missing.body_mut().data()).await.unwrap()
+            .expect("missing segment ended cleanly").unwrap_err().reason(), Some(Reason::INTERNAL_ERROR));
+        assert_eq!(read(&sender, "GET", "/health").await.status(), 200);
+        drop(sender); driver.abort(); h1_server.abort(); let _ = stop.send(());
+        h2_server.await.unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[tokio::test]
@@ -373,6 +445,35 @@ mod tests {
         let head = read(&sender, "HEAD", "/v1/stream/h2").await;
         assert_eq!(head.headers()["stream-next-offset"], tail);
         assert!(collect(head).await.is_empty());
+        // Raw JSON representation retains separators; no wrapper, decode or scan.
+        let raw_path = "/v1/stream/raw-history";
+        let initial = r#"[{"label":"quoted \"} 🧭"},{"label":"two"}]"#;
+        assert!(h1_content(h1_address, "PUT", raw_path, initial.as_bytes(), "application/json")
+            .await.starts_with(b"HTTP/1.1 201"));
+        let expected = r#"{"label":"quoted \"} 🧭"},{"label":"two"},"#.as_bytes();
+        let raw = read(&sender, "GET", "/v1/stream/raw-history?range=bytes=-1048576").await;
+        assert_eq!(raw.status(), 206);
+        assert_eq!(raw.headers()["content-type"], "application/octet-stream");
+        assert_eq!(raw.headers()["content-range"], format!("bytes 0-{}/{}", expected.len() - 1, expected.len()));
+        let cut = raw.headers()["stream-read-cut"].to_str().unwrap().to_string();
+        assert_eq!(collect(raw).await, expected);
+        assert!(h1_content(h1_address, "POST", raw_path, br#"{"label":"later"}"#, "application/json")
+            .await.starts_with(b"HTTP/1.1 204"));
+        let bounded = read(&sender, "GET", &format!("{raw_path}?range=bytes=5-10&cut={cut}")).await;
+        assert_eq!(bounded.status(), 206);
+        assert_eq!(bounded.headers()["stream-read-cut"], cut);
+        assert_eq!(collect(bounded).await, &expected[5..11]);
+        assert_eq!(read(&sender, "GET", &format!("{raw_path}?range=bytes=-1048577")).await.status(), 416);
+        assert_eq!(read(&sender, "GET", &format!("{raw_path}?range=bytes=-16&offset=-1")).await.status(), 400);
+        assert_eq!(read(&sender, "GET", &format!("{raw_path}?range=bytes=-16&cut=0:1")).await.status(), 409);
+        assert!(h1(h1_address, "DELETE", raw_path, b"").await.starts_with(b"HTTP/1.1 204"));
+        assert!(h1_content(h1_address, "PUT", raw_path, b"[]", "application/json").await.starts_with(b"HTTP/1.1 201"));
+        assert_eq!(read(&sender, "GET", &format!("{raw_path}?range=bytes=-16&cut={cut}")).await.status(), 409);
+        let empty = read(&sender, "GET", &format!("{raw_path}?range=bytes=-16")).await;
+        assert_eq!(empty.status(), 204);
+        assert_eq!(empty.headers()["content-range"], "bytes */0");
+        assert!(collect(empty).await.is_empty());
+
         assert_eq!(read(&sender, "PUT", "/v1/stream/h2").await.status(), 405);
         let path = format!("/v1/stream/h2?offset={tail}&live=sse");
         let removed = read(&sender, "GET", &path).await;

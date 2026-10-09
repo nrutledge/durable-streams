@@ -1,4 +1,4 @@
-<!-- Modified by HyperSpaces (2026): Record received licensing, retained attribution and the current fork file inventory. Original: durable-streams 0.1.5, Apache-2.0. -->
+<!-- Modified by HyperSpaces (2026): Record bounded immutable raw reads and retain all fork provenance. Original: durable-streams 0.1.5, Apache-2.0. -->
 # Source provenance
 
 This public HyperSpaces fork starts from the official `durable-streams` 0.1.5
@@ -76,8 +76,8 @@ against the actual PR base or pre-push commit, as well as the fixed import.
 | `scripts/check_attribution.py` | Added | Check received license bytes, retained notices, current edits and the fixed-import inventory. |
 | `scripts/check_attribution_test.py` | Added | Verify license integrity, retained attribution, fresh notices and strict format handling using real Git. |
 | `src/api.rs` | Modified | Allow streaming sources to propagate file-read errors. |
-| `src/engine_h2.rs` | Added | Serve bounded read-only h2c through the existing handlers and Store. |
+| `src/engine_h2.rs` | Added | Serve bounded read-only h2c; verify immutable raw ranges, fixed cuts and recreation. |
 | `src/engine_raw.rs` | Modified | Abort HTTP/1 streaming bodies on source errors. |
-| `src/handlers.rs` | Modified | Preserve SSE file errors and verify damaged-history behavior. |
+| `src/handlers.rs` | Modified | Serve capped raw immutable ranges on existing GET; preserve SSE errors and verify damaged history. |
 | `src/main.rs` | Modified | Wire the optional h2 listener and coordinated shutdown drain. |
 | `src/sse_reactor.rs` | Modified | Abort Linux reactor SSE responses on file-read failures. |
