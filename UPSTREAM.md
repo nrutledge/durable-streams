@@ -63,7 +63,7 @@ against the actual PR base or pre-push commit, as well as the fixed import.
 | File | Change | Description |
 | --- | --- | --- |
 | `.dockerignore` | Added | Exclude Git metadata and build output from the image context. |
-| `.github/workflows/image.yml` | Added | Verify current fork attribution and publish immutable tested GHCR images. |
+| `.github/workflows/image.yml` | Added | Verify attribution; publish immutable main/owned candidate images with resource-capped BuildKit. |
 | `AGENTS.md` | Added | Require current notices, inventory updates and preserved received attribution. |
 | `CHANGELOG.md` | Modified | Record the native h2 fork and preserved storage behavior. |
 | `Cargo.lock` | Modified | Lock the h2 transport dependencies. |
