@@ -1,4 +1,4 @@
-// Modified by HyperSpaces (2026): Preserve SSE file errors and verify damaged-history behavior. Original: durable-streams 0.1.5, Apache-2.0.
+// Modified by HyperSpaces (2026): Serve capped immutable raw ranges alongside existing h1/h2 reads and retained errors. Original: durable-streams 0.1.5, Apache-2.0.
 // HTTP protocol handlers for Durable Streams — engine-agnostic (see api.rs).
 
 use std::sync::Arc;
@@ -162,6 +162,8 @@ struct Query {
     offset: Option<String>,
     live: Option<String>,
     cursor: Option<u64>,
+    range: Option<String>,
+    cut: Option<String>,
 }
 
 fn parse_query(q: Option<&str>) -> Result<Query, &'static str> {
@@ -169,6 +171,8 @@ fn parse_query(q: Option<&str>) -> Result<Query, &'static str> {
         offset: None,
         live: None,
         cursor: None,
+        range: None,
+        cut: None,
     };
     if let Some(q) = q {
         for pair in q.split('&') {
@@ -187,6 +191,9 @@ fn parse_query(q: Option<&str>) -> Result<Query, &'static str> {
                     }
                     out.offset = Some(v);
                 }
+                "range" if out.range.is_none() => out.range = Some(v),
+                "cut" if out.cut.is_none() => out.cut = Some(v),
+                "range" | "cut" => return Err("duplicate range or cut"),
                 "live" => out.live = Some(v),
                 "cursor" => out.cursor = v.parse().ok(),
                 _ => {}
@@ -1329,7 +1336,13 @@ async fn read_range_body(
     live: &'static str,
     cache_hit: &mut bool,
 ) -> Body {
-    let json = st.is_json;
+    read_body(st, start, end, hot, live, cache_hit, st.is_json).await
+}
+
+async fn read_body(
+    st: &Arc<StreamState>, start: u64, end: u64, hot: bool,
+    live: &'static str, cache_hit: &mut bool, json: bool,
+) -> Body {
     if end <= start {
         return if json { full("[]") } else { empty() };
     }
@@ -1545,6 +1558,13 @@ async fn handle_read(store: Arc<Store>, req: Req, path: String) -> Resp {
         Ok(q) => q,
         Err(m) => return text_response(400, m),
     };
+    if q.range.is_some() {
+        if q.offset.is_some() || q.live.is_some() || q.cursor.is_some() {
+            return text_response(400, "raw ranges cannot include offset or live mode");
+        }
+        return handle_raw_range(st, q.range.as_deref().unwrap(), q.cut.as_deref()).await;
+    }
+    if q.cut.is_some() { return text_response(400, "cut requires a raw range"); }
     let offset = match parse_offset(q.offset.as_deref()) {
         Ok(o) => o,
         Err(_) => return text_response(400, "malformed offset"),
@@ -1571,6 +1591,56 @@ async fn handle_read(store: Arc<Store>, req: Req, path: String) -> Resp {
     };
     crate::telemetry::record_read(t0.elapsed_secs(), live_label, cache_hit);
     resp
+}
+
+/// Raw wire coordinates are independent of JSON framing and HTTP encoding.
+/// Fixed cuts bind the stream identity (recreation changes it) and durable end.
+const MAX_RAW_RANGE_BYTES: u64 = 1024 * 1024;
+
+async fn handle_raw_range(st: Arc<StreamState>, range: &str, cut: Option<&str>) -> Resp {
+    let tail = st.tail().bytes;
+    let end = match cut {
+        None => tail,
+        Some(value) => match value.split_once(':').and_then(|(id, end)|
+            Some((id.parse::<u64>().ok()?, end.parse::<u64>().ok()?))) {
+            Some((id, end)) if id == st.id && end <= tail => end,
+            _ => return text_response(409, "raw read cut is no longer available"),
+        },
+    };
+    let token = format!("{}:{}", st.id, end);
+    let coordinates = raw_range_coordinates(range, end);
+    let (start, stop) = match coordinates {
+        Some(value) => value,
+        None => return ResponseBuilder::new(416)
+            .h("content-range", format!("bytes */{end}"))
+            .h("stream-read-cut", token).body(empty()),
+    };
+    let mut hit = false;
+    let body = read_body(&st, start, stop, false, "raw", &mut hit, false).await;
+    ResponseBuilder::new(if end == 0 { 204 } else { 206 })
+        .hs("content-type", "application/octet-stream")
+        .hs("cache-control", "no-store, no-transform")
+        .h("content-range", if end == 0 { "bytes */0".into() }
+            else { format!("bytes {start}-{}/{end}", stop - 1) })
+        .h("stream-read-cut", token)
+        .body(body)
+}
+
+fn raw_range_coordinates(range: &str, end: u64) -> Option<(u64, u64)> {
+    let (start, stop) = range.strip_prefix("bytes=")?.split_once('-')?;
+    let number = |value: &str| -> Option<u64> {
+        if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) { return None; }
+        value.parse().ok()
+    };
+    if start.is_empty() {
+        let count = number(stop)?;
+        if count == 0 || count > MAX_RAW_RANGE_BYTES { return None; }
+        return Some((end.saturating_sub(count), end));
+    }
+    let start = number(start)?;
+    let stop = number(stop)?.checked_add(1)?;
+    if start >= stop || stop > end || stop - start > MAX_RAW_RANGE_BYTES { return None; }
+    Some((start, stop))
 }
 
 /// Resolved start position for a read (catch-up / long-poll / SSE).
