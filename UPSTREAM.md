@@ -1,4 +1,4 @@
-<!-- Modified by HyperSpaces (2026): Record bounded immutable raw reads and retain all fork provenance. Original: durable-streams 0.1.5, Apache-2.0. -->
+<!-- Modified by HyperSpaces (2026): Record bounded raw reads and capped owned candidate publication while retaining fork provenance. Original: durable-streams 0.1.5, Apache-2.0. -->
 # Source provenance
 
 This public HyperSpaces fork starts from the official `durable-streams` 0.1.5
